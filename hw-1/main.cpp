@@ -13,8 +13,8 @@
 using namespace std::chrono;
 
 const uint32_t ARRAY_READS_COUNT = 1'000'000;
-const uint32_t WARMUP_READS_COUNT = 5000;
-const uint32_t BATCHES_COUNT = 4;
+const uint32_t WARMUP_READS_COUNT = 2000;
+const uint32_t BATCHES_COUNT = 3;
 const uint32_t PAGE_SIZE = (1 << 14); // 16 KB
 std::mt19937 gen(239);
 
@@ -229,12 +229,15 @@ capacityAndAssociativity(uint32_t maxAssoc, uint32_t maxStride,
         bool jumpMoved = jumps[assoc / 2][stride + 1];
         bool jumpStayed = jumps[assoc][stride + 1];
 
-        if (!jumpMoved && jumpStayed) {
-          // found the end of the sequence
-          cacheAssociativity = assoc;
-          uint32_t strideShift = minStride / sizeof(uint32_t);
-          cacheSize = (1 << (stride + strideShift)) * cacheAssociativity;
-          found = true;
+        if (!jumpMoved) {
+          if (jumpStayed) {
+            // found the end of the sequence
+            cacheAssociativity = assoc;
+            uint32_t strideShift = minStride / sizeof(uint32_t);
+            cacheSize = (1 << (stride + strideShift)) * cacheAssociativity;
+            found = true;
+          }
+          // the sequence either broke or we found its end
           break;
         }
 
@@ -253,7 +256,7 @@ capacityAndAssociativity(uint32_t maxAssoc, uint32_t maxStride,
 int main() {
   uint32_t maxMemory = (1 << 30); // 1 GB
   uint32_t maxAssoc = 32;
-  uint32_t maxStride = (1 << 25); // 32 MB
+  uint32_t maxStride = (1 << 23); // 8 MB
   uint32_t minStride = 16;        // 16 B
 
   rassert(maxAssoc * maxStride <= maxMemory, 1);
