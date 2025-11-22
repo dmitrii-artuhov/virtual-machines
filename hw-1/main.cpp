@@ -64,7 +64,7 @@ std::string bytesToString(uint32_t bytes) {
   return result;
 }
 
-uint32_t log2(uint32_t n) {
+uint32_t calcLog2(uint32_t n) {
   rassert(n != 0, 2);
   uint32_t log = 0;
   while (n >>= 1)
@@ -280,8 +280,8 @@ capacityAndAssociativity(uint32_t maxAssoc, uint32_t minStride,
 }
 
 std::tuple<uint32_t, bool> lineSize(uint32_t minStride, uint32_t cacheSize) {
-  uint32_t minStridePow = log2(minStride / sizeof(uint32_t));
-  uint32_t maxStridePow = log2(cacheSize / sizeof(uint32_t));
+  uint32_t minStridePow = calcLog2(minStride / sizeof(uint32_t));
+  uint32_t maxStridePow = calcLog2(cacheSize / sizeof(uint32_t));
   uint32_t offsetFactor = 4;
 
   for (uint32_t p = minStridePow; p < maxStridePow; p++) {
