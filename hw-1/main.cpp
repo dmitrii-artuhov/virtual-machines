@@ -301,6 +301,17 @@ std::tuple<uint32_t, bool> lineSize(uint32_t minStride, uint32_t cacheSize) {
         timeOfArrayRead(higherStride, baseRightSpots, ARRAY_READS_COUNT,
                         WARMUP_READS_COUNT, BATCHES_COUNT);
 
+    uint32_t smallestRightSpots = baseRightSpots;
+    timetype smallestRightTime = timetype::zero();
+    for (uint32_t sp = baseSpots, step = 10; sp <= baseRightSpots; sp += step) {
+      smallestRightTime = timeOfArrayRead(higherStride, sp, ARRAY_READS_COUNT,
+                                          WARMUP_READS_COUNT, BATCHES_COUNT);
+      bool isJump = isSufficientIncrease(baseTime, smallestRightTime, fraction);
+      if (isJump) {
+        smallestRightSpots = sp;
+      }
+    }
+
     log() << "Base stride: " << bytesToString(higherStride * sizeof(uint32_t))
           << ", Spots: " << baseSpots << ", AMAT: "
           << static_cast<double>(baseTime.count()) / ARRAY_READS_COUNT
@@ -310,7 +321,10 @@ std::tuple<uint32_t, bool> lineSize(uint32_t minStride, uint32_t cacheSize) {
           << " (spots: " << baseLeftSpots << ")"
           << ", Right AMAT: "
           << static_cast<double>(baseRightTime.count()) / ARRAY_READS_COUNT
-          << " (spots: " << baseRightSpots << ")" << std::endl;
+          << " (spots: " << baseRightSpots << ")"
+          << ", Smallest right AMAT: "
+          << static_cast<double>(smallestRightTime.count()) / ARRAY_READS_COUNT
+          << " (spots: " << smallestRightSpots << ")" << std::endl;
 
     uint32_t jumpsCount = 0;
     for (uint32_t lp = 1; lp < p; lp++) { // lower stride pow
@@ -335,13 +349,9 @@ std::tuple<uint32_t, bool> lineSize(uint32_t minStride, uint32_t cacheSize) {
       timetype leftTime =
           timeOfArrayRead(higherStride + lowerStride, leftSpots,
                           ARRAY_READS_COUNT, WARMUP_READS_COUNT, BATCHES_COUNT);
-      uint32_t rightSpots =
-          baseSpots + spotsWhenHigherStrideIsLessThanLineSize /
-                          offsetFactor; // small step to the right, exact base
-                                        // spots does not always differs enough
-      // + baseSpots / offsetFactor;
-      // spotsWhenHigherStrideIsLessThanLineSize +
-      // spotsWhenHigherStrideIsLessThanLineSize / offsetFactor;
+      // small step to the right, exact base spots does not always differs
+      // enough
+      uint32_t rightSpots = smallestRightSpots;
       timetype rightTime =
           timeOfArrayRead(higherStride + lowerStride, rightSpots,
                           ARRAY_READS_COUNT, WARMUP_READS_COUNT, BATCHES_COUNT);
