@@ -282,25 +282,25 @@ capacityAndAssociativity(uint32_t maxAssoc, uint32_t minStride,
 std::tuple<uint32_t, bool> lineSize(uint32_t minStride, uint32_t cacheSize) {
   uint32_t minStridePow = calcLog2(minStride / sizeof(uint32_t));
   uint32_t maxStridePow = calcLog2(cacheSize / sizeof(uint32_t));
+  uint32_t warmups = 100'000;
   uint32_t offsetFactor = 4;
+  double fraction = 0.20;
 
   for (uint32_t p = minStridePow; p < maxStridePow; p++) {
-    std::vector<int> trend; // 1 - increasing, -1 - decreasing, 0 - stable
-
     uint32_t higherStride = (1 << p);
     uint32_t baseSpots = cacheSize / (higherStride * sizeof(uint32_t));
     timetype baseTime =
         timeOfArrayRead(higherStride, baseSpots, ARRAY_READS_COUNT,
-                        WARMUP_READS_COUNT, BATCHES_COUNT);
+                        warmups, BATCHES_COUNT);
 
     uint32_t baseLeftSpots = baseSpots - baseSpots / offsetFactor;
     timetype baseLeftTime =
         timeOfArrayRead(higherStride, baseLeftSpots, ARRAY_READS_COUNT,
-                        WARMUP_READS_COUNT, BATCHES_COUNT);
+                        warmups, BATCHES_COUNT);
     uint32_t baseRightSpots = baseSpots + baseSpots / offsetFactor;
     timetype baseRightTime =
         timeOfArrayRead(higherStride, baseRightSpots, ARRAY_READS_COUNT,
-                        WARMUP_READS_COUNT, BATCHES_COUNT);
+                        warmups, BATCHES_COUNT);
 
     log() << "Base stride: " << bytesToString(higherStride * sizeof(uint32_t))
           << ", Spots: " << baseSpots << ", AMAT: "
@@ -322,7 +322,7 @@ std::tuple<uint32_t, bool> lineSize(uint32_t minStride, uint32_t cacheSize) {
           cacheSize / ((higherStride + lowerStride) * sizeof(uint32_t));
       timetype currentTime = timeOfArrayRead(
           higherStride + lowerStride, spotsWhenHigherStrideIsLessThanLineSize,
-          ARRAY_READS_COUNT, WARMUP_READS_COUNT, BATCHES_COUNT);
+          ARRAY_READS_COUNT, warmups, BATCHES_COUNT);
 
       log() << "Lower stride: " << bytesToString(lowerStride * sizeof(uint32_t))
             << ", Spots: " << spotsWhenHigherStrideIsLessThanLineSize
@@ -335,13 +335,13 @@ std::tuple<uint32_t, bool> lineSize(uint32_t minStride, uint32_t cacheSize) {
           spotsWhenHigherStrideIsLessThanLineSize / offsetFactor;
       timetype leftTime =
           timeOfArrayRead(higherStride + lowerStride, leftSpots,
-                          ARRAY_READS_COUNT, WARMUP_READS_COUNT, BATCHES_COUNT);
-      uint32_t rightSpots = baseSpots + baseSpots / offsetFactor;
+                          ARRAY_READS_COUNT, warmups, BATCHES_COUNT);
+      uint32_t rightSpots = baseSpots; // + baseSpots / offsetFactor;
       // spotsWhenHigherStrideIsLessThanLineSize +
       // spotsWhenHigherStrideIsLessThanLineSize / offsetFactor;
       timetype rightTime =
           timeOfArrayRead(higherStride + lowerStride, rightSpots,
-                          ARRAY_READS_COUNT, WARMUP_READS_COUNT, BATCHES_COUNT);
+                          ARRAY_READS_COUNT, warmups, BATCHES_COUNT);
       log() << "  Left AMAT: "
             << static_cast<double>(leftTime.count()) / ARRAY_READS_COUNT
             << " (spots: " << leftSpots << ")"
@@ -349,8 +349,8 @@ std::tuple<uint32_t, bool> lineSize(uint32_t minStride, uint32_t cacheSize) {
             << static_cast<double>(rightTime.count()) / ARRAY_READS_COUNT
             << " (spots: " << rightSpots << ")";
 
-      bool isJump = isSufficientIncrease(rightTime, leftTime, 0.3);
-      log() << ", isJump: " << isJump << std::endl;
+      bool isJump = isSufficientIncrease(rightTime, leftTime, fraction);
+      log() << ", isJump: " << isJump << ", frac: " << (rightTime - leftTime) / (1.0 * leftTime) << std::endl;
       jumpsCount += isJump;
     }
 
@@ -375,7 +375,7 @@ int main(int argc, char *argv[]) {
   uint32_t maxMemory = (1 << 30); // 1 GB
   uint32_t maxAssoc = 32;
   uint32_t maxStride = (1 << 23); // 8 MB
-  uint32_t minStride = 16;        // 16 B
+  uint32_t minStride = 16;
 
   rassert(maxAssoc * maxStride <= maxMemory, 1);
 
