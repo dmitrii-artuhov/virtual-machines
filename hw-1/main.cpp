@@ -5,14 +5,14 @@
 #include <ctime>
 #include <iomanip>
 #include <iostream>
-#include <map>
 #include <random>
 #include <string>
+#include <map>
 
 using namespace std::chrono;
 
 const uint32_t ARRAY_READS_COUNT = 1'000'000;
-const uint32_t WARMUP_READS_COUNT = 100'000;
+const uint32_t WARMUP_READS_COUNT = 1'000'000;
 const uint32_t BATCHES_COUNT = 1;
 const uint32_t PAGE_SIZE = (1 << 16); // 64 KB
 const uint32_t TIME_DIV_FACTOR = 10'000;
@@ -297,8 +297,9 @@ uint32_t lineSize(uint32_t minStride, uint32_t maxStride, uint32_t cacheSize) {
   log() << "Min stride: " << bytesToString(minStride) << std::endl;
   log() << "Max stride: " << bytesToString(maxStride) << std::endl;
   uint32_t maxSpots = 1024;
+  double fraction = 0.11;
   enum Trend : int { DEC = 0, STABLE = 1, INC = 2 };
-  std::vector<Trend> trends(calcLog2(maxStride / minStride));
+  std::map<uint32_t, Trend> trends;
 
   for (uint32_t higherStride = minStride; higherStride <= maxStride;
        higherStride *= 2) {
@@ -318,7 +319,7 @@ uint32_t lineSize(uint32_t minStride, uint32_t maxStride, uint32_t cacheSize) {
             << ", time: " << combinedTime.count() / TIME_DIV_FACTOR
             << std::endl;
 
-      if (isSuffientDiff(combinedTime, higherTime, 0.1)) {
+      if (isSuffientDiff(combinedTime, higherTime, fraction)) {
         if (combinedTime > higherTime) {
           increases++;
         } else {
@@ -329,12 +330,11 @@ uint32_t lineSize(uint32_t minStride, uint32_t maxStride, uint32_t cacheSize) {
     log() << "Increases: " << increases << ", decreases: " << decreases
           << std::endl;
 
-    uint32_t p = calcLog2(higherStride / minStride);
-    trends[p] = Trend::STABLE;
+    trends[higherStride] = Trend::STABLE;
     if (increases > decreases) {
-      trends[p] = Trend::INC;
+      trends[higherStride] = Trend::INC;
     } else if (increases < decreases) {
-      trends[p] = Trend::DEC;
+      trends[higherStride] = Trend::DEC;
     }
   }
 
@@ -343,9 +343,7 @@ uint32_t lineSize(uint32_t minStride, uint32_t maxStride, uint32_t cacheSize) {
 
   // trend sequence from which we can determine cache line looks like this:
   // [INC|STABLE]* [DEC|STABLE]*
-  for (uint32_t p = 1; p < trends.size(); p++) {
-    uint32_t stride = (1 << p) * minStride;
-    Trend trend = trends[p];
+  for (auto [stride, trend] : trends) {
     log() << "Stride: " << bytesToString(stride) << ", trend: " << trend
           << std::endl;
 
@@ -385,21 +383,20 @@ int main(int argc, char *argv[]) {
   std::cout << "array: " << array << std::endl;
   std::cout << "len: " << arrayLen << std::endl;
 
-  // auto [cacheAssociativity, cacheSize, detected] =
-  //     capacityAndAssociativity(maxAssoc + 1, minStride, maxStride);
+  auto [cacheAssociativity, cacheSize, detected] =
+      capacityAndAssociativity(maxAssoc + 1, minStride, maxStride);
 
-  // if (detected) {
-  //   std::cout << "Detected L1 cache associativity: " << cacheAssociativity
-  //             << std::endl;
-  //   std::cout << "Detected L1 cache size: " << bytesToString(cacheSize)
-  //             << std::endl;
-  // } else {
-  //   std::cout << "Could not detect L1 cache associativity and size."
-  //             << std::endl;
-  // }
+  if (detected) {
+    std::cout << "Detected L1 cache associativity: " << cacheAssociativity
+              << std::endl;
+    std::cout << "Detected L1 cache size: " << bytesToString(cacheSize)
+              << std::endl;
+  } else {
+    std::cout << "Could not detect L1 cache associativity and size."
+              << std::endl;
+  }
 
-  uint32_t cacheSize = 128 * 1024;
-  auto lineSizeBytes = lineSize(minStride, 1024, cacheSize);
+  auto lineSizeBytes = lineSize(minStride, 512, cacheSize);
   if (lineSizeBytes != 0) {
     std::cout << "Detected cache line size: " << bytesToString(lineSizeBytes)
               << std::endl;
