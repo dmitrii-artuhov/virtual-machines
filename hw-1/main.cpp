@@ -105,8 +105,7 @@ void fillShuffledIndexes(uint32_t stride, uint32_t elems) {
   }
 }
 
-timetype readArray(uint32_t stride, uint32_t elems,
-                         uint32_t batchesCount = 1) {
+timetype readArray(uint32_t stride, uint32_t elems, uint32_t batchesCount = 1) {
   volatile uint32_t sink = 0; // prevents optimization
   timetype diff = timetype::zero();
   uint32_t iterationsPerBatch = ARRAY_READS_COUNT;
@@ -133,7 +132,8 @@ timetype readArray(uint32_t stride, uint32_t elems,
   return diff;
 }
 
-bool isSufficientDiff(timetype currentTime, timetype prevTime, double fraction) {
+bool isSufficientDiff(timetype currentTime, timetype prevTime,
+                      double fraction) {
   double delta = std::abs((currentTime - prevTime).count());
   auto div = delta / prevTime.count();
   return div > fraction;
@@ -150,11 +150,11 @@ timetype getAveragedDelta(const std::vector<std::vector<timetype>> &times,
   return total / (toElem - fromElem);
 }
 
-std::pair<uint32_t, uint32_t> capacityAndAssociativity(
-  uint32_t maxAssoc, uint32_t minStride, uint32_t maxStride
-) {
-  std::cout << "Calculating cache capacity and associativity..."
-        << std::endl;
+std::pair<uint32_t, uint32_t> capacityAndAssociativity(uint32_t maxAssoc,
+                                                       uint32_t minStride,
+                                                       uint32_t maxStride,
+                                                       double fraction) {
+  log() << "Calculating cache capacity and associativity..." << std::endl;
   uint32_t stride = minStride / sizeof(uint32_t); // elements
   uint32_t stridePow = 0;
   // matrix elems x strides
@@ -179,14 +179,14 @@ std::pair<uint32_t, uint32_t> capacityAndAssociativity(
 
   // calculate cumulative jumps
   uint32_t span = 2;
-  double fraction = 0.3;
   for (uint32_t p = 0; p < stridePow; p++) {
     for (uint32_t elem = span + 1; elem + span <= maxAssoc; elem += 2) {
       // find a jump between averaged time[(elem - span)..elem) and
       // time[elem..(elem + span)) for some fixed p
       timetype prevDelta = getAveragedDelta(times, elem - span, elem, p);
       timetype currentDelta = getAveragedDelta(times, elem, elem + span, p);
-      bool isJump = currentDelta > prevDelta && isSufficientDiff(currentDelta, prevDelta, fraction);
+      bool isJump = currentDelta > prevDelta &&
+                    isSufficientDiff(currentDelta, prevDelta, fraction);
       jumps[elem - 1][p] = isJump; // write at elem - 1, so that we see jumps at
                                    // elems 2^t and not 2^t + 1 indexes
     }
@@ -199,7 +199,8 @@ std::pair<uint32_t, uint32_t> capacityAndAssociativity(
   //   s          2 * s            2^(k-1) * s   2^k * s
   // then the cache associativity will be 2^t and the cache size will be
   // (2^(k-1) * s) * associativity
-  // here all values could be multiplied by some constant factor, since associativity could be non power of 2 as well
+  // here all values could be multiplied by some constant factor, since
+  // associativity could be non power of 2 as well
   uint32_t cacheAssociativity = 0;
   uint32_t cacheSize = 0;
   bool found = false;
@@ -249,10 +250,9 @@ timetype averageTime(uint32_t higherStride, uint32_t lowerStride,
   return totalTime / maxSpots;
 }
 
-uint32_t lineSize(uint32_t minStride, uint32_t maxStride) {
-  std::cout << "Calculating cache line size..." << std::endl;
+uint32_t lineSize(uint32_t minStride, uint32_t maxStride, double fraction) {
+  log() << "Calculating cache line size..." << std::endl;
   uint32_t maxSpots = 1024;
-  double fraction = 0.11;
   enum Trend : int { DEC = 0, STABLE = 1, INC = 2 };
   std::map<uint32_t, Trend> trends;
 
@@ -321,8 +321,22 @@ uint32_t lineSize(uint32_t minStride, uint32_t maxStride) {
 }
 
 int main(int argc, char *argv[]) {
-  if (argc > 1 && std::string(argv[1]) == "--debug") {
-    debug = true;
+  double assocSizeRation = 0.3;
+  double lineRatio = 0.11;
+
+  // parse args
+  for (int i = 1; i < argc; i++) {
+    std::string arg = argv[i];
+
+    if (arg == "--debug") {
+      debug = true;
+    } else if (arg == "--as-ratio") {
+      assocSizeRation = std::stod(argv[i + 1]);
+      i++;
+    } else if (arg == "--ln-ratio") {
+      lineRatio = std::stod(argv[i + 1]);
+      i++;
+    }
   }
 
   uint32_t maxMemory = (1 << 30); // 1 GB
@@ -335,11 +349,11 @@ int main(int argc, char *argv[]) {
   array = static_cast<uint32_t *>(aligned_alloc(PAGE_SIZE, maxMemory));
   arrayLen = maxMemory / sizeof(uint32_t);
 
-  std::cout << "array: " << array << std::endl;
-  std::cout << "len: " << arrayLen << std::endl;
+  log() << "array: " << array << std::endl;
+  log() << "len: " << arrayLen << std::endl;
 
-  auto [cacheAssociativity, cacheSize] =
-      capacityAndAssociativity(maxAssoc + 1, minStride, maxStride);
+  auto [cacheAssociativity, cacheSize] = capacityAndAssociativity(
+      maxAssoc + 1, minStride, maxStride, assocSizeRation);
 
   if (cacheAssociativity != 0 && cacheSize != 0) {
     std::cout << "Detected L1 cache associativity: " << cacheAssociativity
@@ -351,12 +365,12 @@ int main(int argc, char *argv[]) {
               << std::endl;
   }
 
-  auto lineSizeBytes = lineSize(minStride, 512);
+  auto lineSizeBytes = lineSize(minStride, 512, lineRatio);
   if (lineSizeBytes != 0) {
-    std::cout << "Detected cache line size: " << bytesToString(lineSizeBytes)
+    std::cout << "Detected L1 cache line size: " << bytesToString(lineSizeBytes)
               << std::endl;
   } else {
-    std::cout << "Could not detect cache line size." << std::endl;
+    std::cout << "Could not detect L1 cache line size." << std::endl;
   }
 
   free(array);
