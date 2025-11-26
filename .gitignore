@@ -1,1 +1,4 @@
 build
+.vscode
+compile_flags.txt
+cache.txt

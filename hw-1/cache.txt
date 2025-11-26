@@ -1,6 +1,0 @@
-# Mac
-sysctl -a
-# Linux
-lscpu
-ls /sys/devices/system/cpu/cpu0/cache/index0/
-cat /sys/devices/system/cpu/cpu0/cache/index0/coherency_line_size
